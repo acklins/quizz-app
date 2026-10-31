@@ -1,4 +1,5 @@
 import streamlit as st  # type: ignore[reportMissingImports]
+import time
 
 #Page config ──────────
 st.set_page_config(
@@ -84,6 +85,13 @@ if "selected" not in st.session_state:
 if "show_results" not in st.session_state:
     st.session_state.show_results = False
 
+#Added timer state
+if "question_start" not in st.session_state:
+    st.session_state.question_start = time.monotonic()
+
+if "time_expired" not in st.session_state:
+    st.session_state.time_expired = False
+
 # ═════════════════
 # RESULTS SCREEN
 if st.session_state.show_results:
@@ -119,6 +127,8 @@ if st.session_state.show_results:
         st.session_state.answered = False
         st.session_state.selected = None
         st.session_state.show_results = False
+        st.session_state.question_start = time.monotonic()
+        st.session_state.time_expired = False
 
         st.rerun()
 
@@ -139,6 +149,40 @@ progress = q_index / total_qs
 
 st.progress(progress)
 
+#Added timer
+@st.fragment(run_every=1)
+def countdown_timer():
+
+    if st.session_state.answered:
+        return
+
+    elapsed = time.monotonic() - st.session_state.question_start
+    seconds_left = max(0, 15 - int(elapsed)) 
+
+    timer_placeholder = st.empty()
+
+    if seconds_left > 0:
+        timer_placeholder.write(
+            f"⏰ Time remaining: **{seconds_left}** seconds"
+        )
+
+#Automatic advancement of the timer
+    else:
+        timer_placeholder.warning("⏰ Time's up!")
+
+        if st.session_state.current_q == len(QUESTIONS) - 1:
+            st.session_state.show_results = True
+        else:
+            st.session_state.current_q += 1
+            st.session_state.answered = False
+            st.session_state.selected = None
+            st.session_state.time_expired = False
+            st.session_state.question_start = time.monotonic()
+            
+        st.rerun()
+    
+countdown_timer()# keep or no keep?
+
 #Question and answer options display
 st.subheader(current_question["question"])
 
@@ -155,7 +199,12 @@ if not st.session_state.answered:
 
     if st.button("Submit Answer"):
 
-        if choice is None:
+        elapsed = time.monotonic() - st.session_state.question_start
+
+        if elapsed >= 15:
+            st.warning("Time's up! Your answer was not submitted.")
+
+        elif choice is None:
             st.warning("Please select an answer first.")
         else:
             st.session_state.selected = choice
@@ -169,10 +218,20 @@ if not st.session_state.answered:
 #Display feedback after submission
 if st.session_state.answered:
 
-    if st.session_state.selected == current_question["answer"]:
+    if st.session_state.time_expired:
+
+        st.warning("⏰ Time's up! No points awarded.")
+
+        st.write(
+            f"Correct answer: **{current_question['answer']}**"
+        )
+
+    elif st.session_state.selected == current_question["answer"]:
+
         st.success("Correct! Great job!")
 
-    else: 
+    else:
+        
         st.error("Incorrect answer.")
 
         st.write(
@@ -180,8 +239,7 @@ if st.session_state.answered:
         )
     st.info(current_question["explanation"])
 
-    #The next queestion button
-
+    #The next question button
     if q_index == total_qs - 1:
         button_label = "Finish Quiz"
     else:
@@ -197,5 +255,7 @@ if st.session_state.answered:
             st.session_state.current_q += 1
             st.session_state.answered = False
             st.session_state.selected = None
+            st.session_state.time_expired = False
+            st.session_state.question_start = time.monotonic()
 
         st.rerun()
